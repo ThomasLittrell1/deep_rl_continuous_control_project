@@ -55,6 +55,9 @@ class Agent:
         # Initialize time step (for updating every UPDATE_EVERY steps)
         self.t_step = 0
 
+        # Action selection
+        self.noise_scale = 1
+
     def step(self, state, action, reward, next_state, done):
         # Save experience in replay memory
         self.memory.add(state, action, reward, next_state, done)
@@ -78,14 +81,17 @@ class Agent:
         state = torch.from_numpy(state).float().unsqueeze(0).to(device)
         self.qnetwork_local.eval()
         with torch.no_grad():
-            action = (
-                self.policy_network_local(state)
-                .reshape(1, -1)
-                .type(torch.FloatTensor)
-                .numpy()
-            )
+            action = self.policy_network_local(state).reshape(1, -1).numpy()
         self.qnetwork_local.train()
-        return action
+
+        # Add noise to the policy that decays to 0 over time to encourage exploration
+        noise = np.random.normal(
+            loc=0, scale=self.noise_scale, size=(1, self.action_size)
+        )
+        action += noise
+        self.noise_scale *= 0.999
+
+        return np.clip(action, a_min=-1, a_max=1)
 
     def learn(self, experiences, gamma):
         """Update value parameters using given batch of experience tuples.
