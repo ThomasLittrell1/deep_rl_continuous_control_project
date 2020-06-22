@@ -78,7 +78,12 @@ class Agent:
         state = torch.from_numpy(state).float().unsqueeze(0).to(device)
         self.qnetwork_local.eval()
         with torch.no_grad():
-            action = self.policy_network_local(state)
+            action = (
+                self.policy_network_local(state)
+                .reshape(1, -1)
+                .type(torch.FloatTensor)
+                .numpy()
+            )
         self.qnetwork_local.train()
         return action
 
@@ -97,10 +102,11 @@ class Agent:
         best_next_Q = self.qnetwork_target.forward(next_states, argmax_a_next)
         Q_target = rewards + gamma * best_next_Q * (1 - dones)
 
-        Q_current = self.qnetwork_local.forward(states, actions).gather(1, actions)
+        Q_current = self.qnetwork_local.forward(states, actions)
 
         self.q_optimizer.zero_grad()
-        loss = torch.nn.MSELoss(Q_current, Q_target)
+        criterion = torch.nn.MSELoss()
+        loss = criterion(Q_current, Q_target.detach())
         loss.backward()
         self.q_optimizer.step()
 

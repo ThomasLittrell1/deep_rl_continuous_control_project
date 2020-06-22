@@ -20,23 +20,22 @@ def dqn(agent: Agent, env, brain_name, n_episodes: int = 10):
     scores = []  # list containing scores from each episode
     scores_window = deque(maxlen=100)  # last 100 scores
     for i_episode in range(1, n_episodes + 1):
-        env_info = env.reset(train_mode=True)[brain_name]
-        state = env_info.vector_observations[0]
-        score = 0
+        env_info = env.reset(train_mode=True)[brain_name]  # reset the environment
+        states = env_info.vector_observations
+        scores = np.zeros(1)
         while True:
-            action = agent.act(state)
-            env_info = env.step(action)[brain_name]
-            next_state = env_info.vector_observations[0]
-            reward = env_info.rewards[0]
-            done = env_info.local_done[0]
-            agent.step(state, action, reward, next_state, done)
-            state = next_state
-            score += reward
-            if done:
+            actions = agent.act(states)
+            env_info = env.step(actions)[brain_name]
+            next_states = env_info.vector_observations
+            rewards = env_info.rewards
+            dones = env_info.local_done
+            agent.step(states, actions, rewards, next_states, dones)
+            states = next_states
+            scores += env_info.rewards
+            if np.any(dones):
                 break
 
-        scores_window.append(score)  # save most recent score
-        scores.append(score)  # save most recent score
+        scores_window.append(scores)  # save most recent score
         print(
             f"\rEpisode {i_episode}\tAverage Score: {np.mean(scores_window):.2f}",
             end="",

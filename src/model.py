@@ -26,7 +26,7 @@ class QNetwork(nn.Module):
 
     def forward(self, state, action):
         """Build a network that maps state, actions -> values."""
-        x = torch.cat((state, action), dimension=1)
+        x = torch.cat((state, action.type(torch.FloatTensor)), dim=1)
         result = self.fc1(x)
         result = F.relu(result)
         result = self.fc2(result)
