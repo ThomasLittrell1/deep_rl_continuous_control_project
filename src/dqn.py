@@ -22,7 +22,7 @@ def dqn(agent: Agent, env, brain_name, n_episodes: int = 10):
     for i_episode in range(1, n_episodes + 1):
         env_info = env.reset(train_mode=True)[brain_name]  # reset the environment
         states = env_info.vector_observations
-        scores = np.zeros(1)
+        score = 0
         while True:
             actions = agent.act(states)
             env_info = env.step(actions)[brain_name]
@@ -31,18 +31,18 @@ def dqn(agent: Agent, env, brain_name, n_episodes: int = 10):
             dones = env_info.local_done
             agent.step(states, actions, rewards, next_states, dones)
             states = next_states
-            scores += env_info.rewards
+            score += env_info.rewards[0]
             if np.any(dones):
                 break
 
-        scores_window.append(scores)  # save most recent score
+        scores_window.append(score)  # save most recent score
         print(
             f"\rEpisode {i_episode}\tAverage Score: {np.mean(scores_window):.2f}",
             end="",
         )
         if i_episode % 100 == 0:
             print(f"\rEpisode {i_episode}\tAverage Score: {np.mean(scores_window):.2f}")
-        if np.mean(scores_window) >= 13.0:
+        if np.mean(scores_window) >= 30.0:
             print(
                 f"\nEnvironment solved in {i_episode-100:d} episodes!\tAverage Score:"
                 f" {np.mean(scores_window):.2f}"
