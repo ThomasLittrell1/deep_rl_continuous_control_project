@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 
-from src.model import QNetwork
+from src.model import PolicyNetwork, QNetwork
 
 BUFFER_SIZE = int(1e5)  # replay buffer size
 BATCH_SIZE = 64  # minibatch size
@@ -18,10 +18,11 @@ UPDATE_EVERY = 4  # how often to update the network
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
+# noinspection PyUnresolvedReferences
 class Agent:
     """Interacts with and learns from the environment."""
 
-    def __init__(self, state_size, action_size, seed, td_target_type="DQN"):
+    def __init__(self, state_size, action_size, seed):
         """Initialize an Agent object.
 
         Params
@@ -37,9 +38,18 @@ class Agent:
         # Q-Network
         self.qnetwork_local = QNetwork(state_size, action_size, seed).to(device)
         self.qnetwork_target = QNetwork(state_size, action_size, seed).to(device)
-        self.optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
-        assert td_target_type in {"DQN", "Double DQN"}
-        self.td_target_type = td_target_type
+        self.q_optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
+
+        # Policy Network
+        self.policy_network_local = PolicyNetwork(state_size, action_size, seed).to(
+            device
+        )
+        self.policy_network_target = PolicyNetwork(state_size, action_size, seed).to(
+            device
+        )
+        self.policy_optimizer = optim.Adam(
+            self.policy_network_local.parameters(), lr=LR
+        )
 
         # Replay memory
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, seed)
@@ -88,45 +98,33 @@ class Agent:
         """
         states, actions, rewards, next_states, dones = experiences
 
-        criterion = torch.nn.MSELoss()
-        optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
-        optimizer.zero_grad()
-
-        if self.td_target_type == "DQN":
-            # compute the Q target using the Q-target network
-            best_next_Q = (
-                self.qnetwork_target.forward(next_states)
-                .detach()
-                .max(1)[0]
-                .unsqueeze(1)
-            )
-        elif self.td_target_type == "Double DQN":
-            # select best action using current network
-            best_next_actions = (
-                self.qnetwork_local.forward(next_states)
-                .detach()
-                .max(1)[1]
-                .reshape(-1, 1)
-            )
-
-            # Use the target network to evaluate the best actions
-            best_next_Q = (
-                self.qnetwork_target.forward(next_states)
-                .detach()
-                .gather(1, best_next_actions)
-            )
-
+        # Update the Q-network
+        argmax_a_next = self.policy_network_target.forward(next_states)
+        best_next_Q = self.qnetwork_target.forward(next_states, argmax_a_next)
         Q_target = rewards + gamma * best_next_Q * (1 - dones)
 
-        Q_current = self.qnetwork_local.forward(states).gather(1, actions)
-        loss = criterion(Q_current, Q_target)
+        Q_current = self.qnetwork_local.forward(states, actions).gather(1, actions)
+
+        self.q_optimizer.zero_grad()
+        loss = torch.nn.MSELoss(Q_current, Q_target)
         loss.backward()
-        optimizer.step()
+        self.q_optimizer.step()
+
+        # Update the policy network
+        argmax_a = self.policy_network_local.forward(states)
+        action_values = self.qnetwork_local.forward(states, argmax_a)
+
+        self.policy_optimizer.zero_grad()
+        loss = -action_values.mean()  # Negative b/c we're doing gradient ascent
+        loss.backward()
+        self.policy_optimizer.step()
 
         # ------------------- update target network ------------------- #
         self.soft_update(self.qnetwork_local, self.qnetwork_target, TAU)
+        self.soft_update(self.policy_network_local, self.policy_network_target, TAU)
 
-    def soft_update(self, local_model, target_model, tau):
+    @staticmethod
+    def soft_update(local_model, target_model, tau):
         """Soft update model parameters.
         θ_target = τ*θ_local + (1 - τ)*θ_target
 
@@ -144,6 +142,7 @@ class Agent:
             )
 
 
+# noinspection PyUnresolvedReferences
 class ReplayBuffer:
     """Fixed-size buffer to store experience tuples."""
 
@@ -211,7 +210,7 @@ class ReplayBuffer:
             .to(device)
         )
 
-        return (states, actions, rewards, next_states, dones)
+        return states, actions, rewards, next_states, dones
 
     def __len__(self):
         """Return the current size of internal memory."""
