@@ -3,7 +3,6 @@ from collections import deque, namedtuple
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.optim as optim
 
 from src.model import PolicyNetwork, QNetwork
@@ -68,7 +67,7 @@ class Agent:
                 experiences = self.memory.sample()
                 self.learn(experiences, GAMMA)
 
-    def act(self, state, eps=0.0):
+    def act(self, state):
         """Returns actions for given state as per current policy.
 
         Params
@@ -79,14 +78,9 @@ class Agent:
         state = torch.from_numpy(state).float().unsqueeze(0).to(device)
         self.qnetwork_local.eval()
         with torch.no_grad():
-            action_values = self.qnetwork_local(state)
+            action = self.policy_network_local(state)
         self.qnetwork_local.train()
-
-        # Epsilon-greedy action selection
-        if random.random() > eps:
-            return np.argmax(action_values.cpu().data.numpy())
-        else:
-            return random.choice(np.arange(self.action_size))
+        return action
 
     def learn(self, experiences, gamma):
         """Update value parameters using given batch of experience tuples.
