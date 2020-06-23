@@ -20,9 +20,9 @@ class QNetwork(nn.Module):
         super().__init__()
         self.seed = torch.manual_seed(seed)
 
-        self.fc1 = nn.Linear(in_features=state_size + action_size, out_features=64)
-        self.fc2 = nn.Linear(in_features=64, out_features=64)
-        self.fc3 = nn.Linear(in_features=64, out_features=1)
+        self.fc1 = nn.Linear(in_features=state_size + action_size, out_features=100)
+        self.fc2 = nn.Linear(in_features=100, out_features=100)
+        self.fc3 = nn.Linear(in_features=100, out_features=1)
 
     def forward(self, state, action):
         """Build a network that maps state, actions -> values."""
@@ -40,9 +40,9 @@ class PolicyNetwork(nn.Module):
         super().__init__()
         self.seed = torch.manual_seed(seed)
 
-        self.fc1 = nn.Linear(in_features=state_size, out_features=64)
-        self.fc2 = nn.Linear(in_features=64, out_features=64)
-        self.fc3 = nn.Linear(in_features=64, out_features=action_size)
+        self.fc1 = nn.Linear(in_features=state_size, out_features=100)
+        self.fc2 = nn.Linear(in_features=100, out_features=100)
+        self.fc3 = nn.Linear(in_features=100, out_features=action_size)
 
     def forward(self, state):
         result = F.relu(self.fc1(state))

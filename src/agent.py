@@ -79,9 +79,11 @@ class Agent:
         """
         state = torch.from_numpy(state).float().unsqueeze(0).to(device)
         self.qnetwork_local.eval()
+        self.policy_network_local.eval()
         with torch.no_grad():
             action = self.policy_network_local(state).reshape(1, -1).numpy()
         self.qnetwork_local.train()
+        self.policy_network_local.train()
 
         # Add noise to the policy that decays to 0 over time to encourage exploration
         noise = np.random.normal(

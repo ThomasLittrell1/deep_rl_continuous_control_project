@@ -35,6 +35,7 @@ def dqn(agent: Agent, env, brain_name, n_episodes: int = 10):
             if np.any(dones):
                 break
 
+        scores.append(score)
         scores_window.append(score)  # save most recent score
         print(
             f"\rEpisode {i_episode}\tAverage Score: {np.mean(scores_window):.2f}",
