@@ -20,15 +20,15 @@ class QNetwork(nn.Module):
         super().__init__()
         self.seed = torch.manual_seed(seed)
 
-        self.fc1 = nn.Linear(in_features=state_size + action_size, out_features=100)
-        self.fc2 = nn.Linear(in_features=100, out_features=100)
+        self.fc1 = nn.Linear(in_features=state_size, out_features=100)
+        self.fc2 = nn.Linear(in_features=100 + action_size, out_features=100)
         self.fc3 = nn.Linear(in_features=100, out_features=1)
 
     def forward(self, state, action):
         """Build a network that maps state, actions -> values."""
-        x = torch.cat((state, action.type(torch.FloatTensor)), dim=1)
-        result = self.fc1(x)
+        result = self.fc1(state)
         result = F.relu(result)
+        result = torch.cat((result, action.type(torch.FloatTensor)), dim=1)
         result = self.fc2(result)
         result = F.relu(result)
         result = self.fc3(result)

@@ -12,6 +12,9 @@ BATCH_SIZE = 64  # minibatch size
 GAMMA = 0.99  # discount factor
 TAU = 1e-3  # for soft update of target parameters
 LR = 5e-4  # learning rate
+UPDATE_EVERY = 10  # How often to learn
+START_NOISE_SCALE = 0.2  # Starting normal std
+NOISE_DECAY = 0.999  # How much to decay the noise every time step
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -55,19 +58,20 @@ class Agent:
         self.t_step = 0
 
         # Action selection
-        self.noise_scale = 1
+        self.noise_scale = START_NOISE_SCALE
 
     def step(self, state, action, reward, next_state, done):
         # Save experience in replay memory
         self.memory.add(state, action, reward, next_state, done)
 
-        # # Learn every UPDATE_EVERY time steps.
-        # self.t_step = (self.t_step + 1) % UPDATE_EVERY
-        # if self.t_step == 0:
-        #     # If enough samples are available in memory, get random subset and learn
-        if len(self.memory) > BATCH_SIZE:
-            experiences = self.memory.sample()
-            self.learn(experiences, GAMMA)
+        # Learn every UPDATE_EVERY time steps.
+        self.t_step = (self.t_step + 1) % UPDATE_EVERY
+        if self.t_step == 0:
+            # If enough samples are available in memory, get random subset and learn
+            if len(self.memory) > BATCH_SIZE:
+                for _ in range(20):
+                    experiences = self.memory.sample()
+                    self.learn(experiences, GAMMA)
 
     def act(self, state):
         """Returns actions for given state as per current policy.
@@ -90,7 +94,7 @@ class Agent:
             loc=0, scale=self.noise_scale, size=(1, self.action_size)
         )
         action += noise
-        self.noise_scale *= 0.999
+        self.noise_scale *= NOISE_DECAY
 
         return np.clip(action, a_min=-1, a_max=1)
 
@@ -115,6 +119,7 @@ class Agent:
         criterion = torch.nn.MSELoss()
         loss = criterion(Q_current, Q_target.detach())
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.qnetwork_local.parameters(), 1)
         self.q_optimizer.step()
 
         # Update the policy network
@@ -124,6 +129,7 @@ class Agent:
         self.policy_optimizer.zero_grad()
         loss = -action_values.mean()  # Negative b/c we're doing gradient ascent
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_network_local.parameters(), 1)
         self.policy_optimizer.step()
 
         # ------------------- update target network ------------------- #
