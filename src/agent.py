@@ -3,25 +3,27 @@ from collections import deque, namedtuple
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.optim as optim
 
-from src.model import QNetwork
+from src.model import PolicyNetwork, QNetwork
 
 BUFFER_SIZE = int(1e5)  # replay buffer size
 BATCH_SIZE = 64  # minibatch size
 GAMMA = 0.99  # discount factor
 TAU = 1e-3  # for soft update of target parameters
 LR = 5e-4  # learning rate
-UPDATE_EVERY = 4  # how often to update the network
+UPDATE_EVERY = 10  # How often to learn
+START_NOISE_SCALE = 0.2  # Starting normal std
+NOISE_DECAY = 0.999  # How much to decay the noise every time step
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
+# noinspection PyUnresolvedReferences
 class Agent:
     """Interacts with and learns from the environment."""
 
-    def __init__(self, state_size, action_size, seed, td_target_type="DQN"):
+    def __init__(self, state_size, action_size, seed):
         """Initialize an Agent object.
 
         Params
@@ -37,28 +39,46 @@ class Agent:
         # Q-Network
         self.qnetwork_local = QNetwork(state_size, action_size, seed).to(device)
         self.qnetwork_target = QNetwork(state_size, action_size, seed).to(device)
-        self.optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
-        assert td_target_type in {"DQN", "Double DQN"}
-        self.td_target_type = td_target_type
+        self.q_optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
+
+        # Policy Network
+        self.policy_network_local = PolicyNetwork(state_size, action_size, seed).to(
+            device
+        )
+        self.policy_network_target = PolicyNetwork(state_size, action_size, seed).to(
+            device
+        )
+        self.policy_optimizer = optim.Adam(
+            self.policy_network_local.parameters(), lr=LR
+        )
 
         # Replay memory
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, seed)
         # Initialize time step (for updating every UPDATE_EVERY steps)
         self.t_step = 0
 
-    def step(self, state, action, reward, next_state, done):
-        # Save experience in replay memory
-        self.memory.add(state, action, reward, next_state, done)
+        # Action selection
+        self.noise_scale = START_NOISE_SCALE
+
+    def step(self, states, actions, rewards, next_states, dones):
+
+        # With multiple arms we need to save each experience separately in the replay
+        # buffer
+        for state, action, reward, next_state, done in zip(
+            states, actions, rewards, next_states, dones
+        ):
+            self.memory.add(state, action, reward, next_state, done)
 
         # Learn every UPDATE_EVERY time steps.
         self.t_step = (self.t_step + 1) % UPDATE_EVERY
         if self.t_step == 0:
             # If enough samples are available in memory, get random subset and learn
             if len(self.memory) > BATCH_SIZE:
-                experiences = self.memory.sample()
-                self.learn(experiences, GAMMA)
+                for _ in range(20):
+                    experiences = self.memory.sample()
+                    self.learn(experiences, GAMMA)
 
-    def act(self, state, eps=0.0):
+    def act(self, state):
         """Returns actions for given state as per current policy.
 
         Params
@@ -66,17 +86,22 @@ class Agent:
             state (array_like): current state
             eps (float): epsilon, for epsilon-greedy action selection
         """
-        state = torch.from_numpy(state).float().unsqueeze(0).to(device)
+        state = torch.from_numpy(state).float().to(device)
         self.qnetwork_local.eval()
+        self.policy_network_local.eval()
         with torch.no_grad():
-            action_values = self.qnetwork_local(state)
+            action = self.policy_network_local(state).cpu().data.numpy()
         self.qnetwork_local.train()
+        self.policy_network_local.train()
 
-        # Epsilon-greedy action selection
-        if random.random() > eps:
-            return np.argmax(action_values.cpu().data.numpy())
-        else:
-            return random.choice(np.arange(self.action_size))
+        # Add noise to the policy that decays to 0 over time to encourage exploration
+        noise = np.random.normal(
+            loc=0, scale=self.noise_scale, size=(1, self.action_size)
+        )
+        action += noise
+        self.noise_scale *= NOISE_DECAY
+
+        return np.clip(action, a_min=-1, a_max=1)
 
     def learn(self, experiences, gamma):
         """Update value parameters using given batch of experience tuples.
@@ -88,45 +113,36 @@ class Agent:
         """
         states, actions, rewards, next_states, dones = experiences
 
-        criterion = torch.nn.MSELoss()
-        optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
-        optimizer.zero_grad()
-
-        if self.td_target_type == "DQN":
-            # compute the Q target using the Q-target network
-            best_next_Q = (
-                self.qnetwork_target.forward(next_states)
-                .detach()
-                .max(1)[0]
-                .unsqueeze(1)
-            )
-        elif self.td_target_type == "Double DQN":
-            # select best action using current network
-            best_next_actions = (
-                self.qnetwork_local.forward(next_states)
-                .detach()
-                .max(1)[1]
-                .reshape(-1, 1)
-            )
-
-            # Use the target network to evaluate the best actions
-            best_next_Q = (
-                self.qnetwork_target.forward(next_states)
-                .detach()
-                .gather(1, best_next_actions)
-            )
-
+        # Update the Q-network
+        argmax_a_next = self.policy_network_target.forward(next_states)
+        best_next_Q = self.qnetwork_target.forward(next_states, argmax_a_next)
         Q_target = rewards + gamma * best_next_Q * (1 - dones)
 
-        Q_current = self.qnetwork_local.forward(states).gather(1, actions)
-        loss = criterion(Q_current, Q_target)
+        Q_current = self.qnetwork_local.forward(states, actions)
+
+        self.q_optimizer.zero_grad()
+        criterion = torch.nn.MSELoss()
+        loss = criterion(Q_current, Q_target.detach())
         loss.backward()
-        optimizer.step()
+        torch.nn.utils.clip_grad_norm_(self.qnetwork_local.parameters(), 1)
+        self.q_optimizer.step()
+
+        # Update the policy network
+        argmax_a = self.policy_network_local.forward(states)
+        action_values = self.qnetwork_local.forward(states, argmax_a)
+
+        self.policy_optimizer.zero_grad()
+        loss = -action_values.mean()  # Negative b/c we're doing gradient ascent
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_network_local.parameters(), 1)
+        self.policy_optimizer.step()
 
         # ------------------- update target network ------------------- #
         self.soft_update(self.qnetwork_local, self.qnetwork_target, TAU)
+        self.soft_update(self.policy_network_local, self.policy_network_target, TAU)
 
-    def soft_update(self, local_model, target_model, tau):
+    @staticmethod
+    def soft_update(local_model, target_model, tau):
         """Soft update model parameters.
         θ_target = τ*θ_local + (1 - τ)*θ_target
 
@@ -144,6 +160,7 @@ class Agent:
             )
 
 
+# noinspection PyUnresolvedReferences
 class ReplayBuffer:
     """Fixed-size buffer to store experience tuples."""
 
@@ -211,7 +228,7 @@ class ReplayBuffer:
             .to(device)
         )
 
-        return (states, actions, rewards, next_states, dones)
+        return states, actions, rewards, next_states, dones
 
     def __len__(self):
         """Return the current size of internal memory."""
