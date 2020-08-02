@@ -13,7 +13,7 @@ backcall==0.2.0
 binaryornot==0.4.4
 biopython==1.77
 black==19.10b0
-bleach==1.5.0
+bleach==3.1.4
 bokeh==2.1.0
 boto3==1.14.7
 botocore==1.17.7
