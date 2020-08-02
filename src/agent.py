@@ -60,9 +60,14 @@ class Agent:
         # Action selection
         self.noise_scale = START_NOISE_SCALE
 
-    def step(self, state, action, reward, next_state, done):
-        # Save experience in replay memory
-        self.memory.add(state, action, reward, next_state, done)
+    def step(self, states, actions, rewards, next_states, dones):
+
+        # With multiple arms we need to save each experience separately in the replay
+        # buffer
+        for state, action, reward, next_state, done in zip(
+            states, actions, rewards, next_states, dones
+        ):
+            self.memory.add(state, action, reward, next_state, done)
 
         # Learn every UPDATE_EVERY time steps.
         self.t_step = (self.t_step + 1) % UPDATE_EVERY
@@ -81,11 +86,11 @@ class Agent:
             state (array_like): current state
             eps (float): epsilon, for epsilon-greedy action selection
         """
-        state = torch.from_numpy(state).float().unsqueeze(0).to(device)
+        state = torch.from_numpy(state).float().to(device)
         self.qnetwork_local.eval()
         self.policy_network_local.eval()
         with torch.no_grad():
-            action = self.policy_network_local(state).reshape(1, -1).numpy()
+            action = self.policy_network_local(state).cpu().data.numpy()
         self.qnetwork_local.train()
         self.policy_network_local.train()
 
