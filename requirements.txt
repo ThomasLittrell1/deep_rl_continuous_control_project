@@ -30,7 +30,7 @@ contextvars==2.4
 cookiecutter==1.6.0
 coverage==5.1
 cycler==0.10.0
-dask==2.19.0
+dask==2021.10.0
 decorator==4.4.2
 defusedxml==0.6.0
 distlib==0.3.0
