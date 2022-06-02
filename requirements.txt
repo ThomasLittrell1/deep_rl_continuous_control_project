@@ -59,7 +59,7 @@ h5py==2.10.0
 hdfs==2.5.8
 HeapDict==1.0.1
 holoviews==1.13.2
-html5lib==0.9999999
+html5lib==0.99999999
 identify==1.4.20
 idna==2.9
 imagesize==1.2.0
